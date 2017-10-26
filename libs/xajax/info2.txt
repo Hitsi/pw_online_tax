@@ -1,0 +1,315 @@
+Использование xajax и Smarty в PHP5 - Часть 2
+
+Посвящается Гурьяновой В.С... Потому что это было...
+
+Внимание! Во всех примерах используется переработанный исходный текст библиотек. Он адаптирован исключительно для PHP 5, а так же имеет некоторые изменения в конструкторах классов, для повышения удобства использования. Скачать измененные тексты можно вместе с примерами к статье.
+
+Мы разобрались как обеспечить минимально необходимое взаимодействие xajax и Smarty, но пользователю может потребоваться обработка Smarty-шаблонов в асинхронно-вызываемых функциях.
+
+Лучший способ обучения - изучение на примере. Попробуем написать несложную гостевую книгу на PHP 5, используя xajax и Smarty. Минимальный функционал будет такой: вывод записей на экран (по 5 записей на странице) и добавление записей пользователем. Естественно, что смена страницы и добавление записи приводит только к обновлению списка записей, без перезагрузки страницы.
+Работа с записями
+
+Первое с чего следует начать - разобраться с тем, где и как мы будем хранить записи гостевой книги. Чтобы не перегружать этот учебный пример, договоримся хранить записи в обычном текстовом файле. Структура файла будет очень проста: каждая строка - отдельная запись. Поля записи будут разделяться символами "<>". Дело в том, что при обработки добавляемых записей теги из них будут вырезаться, а значит лишние символы "<>" в файле не появятся. Оформим функции манипулирования файлом, содержащим записи в виде класса Record:
+
+<?php
+    /**
+     * File:  Record.class.php
+     *
+     * Управление записями в гостевой книге
+     *
+     * @copyright 2007 Samolisov Pavel.
+     * @author Samolisov Pavel <samolisov@gmail.com>
+     */
+    class Record {
+        /**
+         * Файл с данными
+         *
+         * @var string
+         * @access private
+         */
+         private $data_file;
+
+        /**
+         * Конструктор класса
+         *
+         * @param string $file путь и имя к файлу работы с записями
+         */
+        public function __construct($file) {
+            $this->data_file = $file;
+        }
+
+        /**
+         * Получаем ассоциативный массив записей
+         *
+         * @param integer $start с какой записи считывать
+         * @param integer $limit сколько записей считывать
+         * @return array массив записей
+         */
+        public function get($start=0, $limit=10) {
+            $records = array_reverse(file($this->data_file));
+            $recarr = array();
+            for ($i = $start; $i < ($start+$limit>count($records)?count($records):$start+$limit); $i++ ) {
+                $src = explode("<>", $records[$i]);
+                $rec = array();
+                $rec["date"]  = date("d.m.Y/H:i:s", intval($src[0]));
+                $rec["name"]  = $src[1];
+                $rec["email"] = $src[2];
+                $rec["text"]  = $src[3];
+                $recarr[] = $rec;
+            }
+            return $recarr;
+        }
+
+        /**
+         * Получаем количество записей
+         *
+         * @return integer количество записей
+         */
+        public function get_cnt() {
+            return count(file($this->data_file));
+        }
+
+        /**
+         * Добавляем запись в файл
+         *
+         * @param integer $date дата добавления
+         * @param string  $name имя добавившего
+         * @param string  $email e-mail добавившего
+         * @param string  $text текст записи
+         */
+        public function add($date, $name, $email, $text) {
+            $fp = fopen($this->data_file, "a+");
+            $text = $date."<>".$name."<>".$email."<>".$text."n";
+            fwrite($fp, $text);
+            fclose($fp);
+        }
+    }
+?>
+
+Метод get возвращает ассоциативный массив записей, начиная с записи под номером $start в количестве $limit, отсортированных по дате добавления в обратном порядке. Т.е. самые последние записи оказываются "сверху".
+
+Метод $add добавляет запись в текстовый файл - хранилище. Записи разделяются символами "<>".
+Интерфейсные функции
+
+Теперь рассмотрим функции управления работой с записями, т.е. фактически функции пользовательского интерфейса. Все эти функции сведены в класс UInterface:
+
+<?php
+    /**
+     * File:  UInterface.class.php
+     *
+     * Класс, содержащий функции реализующийе Ajax интерфейс пользователя
+     *
+     * @copyright 2007 Samolisov Pavel.
+     * @author Samolisov Pavel <samolisov@gmail.com>
+     */
+    class UInterface {
+
+        /**
+         * Добавление данных в массив записей
+         *
+         * @param array $data_arr ассоциативный массив данных
+         * @return string XML данные для xajax
+         */
+        public static function addRecord($data_arr) {
+            // Готовим данные
+            $data = array();
+            $data["time"]  = time();
+            $data["date"]  = date("d.m.Y/H:i:s", time());
+            $data["name"]  = PReparer::distags($data_arr["name"]);
+            $data["email"] = PReparer::distags($data_arr["email"]);
+            $data["text"]  = PReparer::nl2br(PReparer::distags($data_arr["text"]));
+
+            // Добавляем запись
+            $record = RecordFactory::get("data.txt");
+            $record->add($data["time"], $data["name"], $data["email"], $data["text"]);
+
+            $objResponse = new xajaxResponse("windows-1251");
+           
+            $html = self::getPageText(0);
+            $objResponse->addAssign("data", "innerHTML", $html);
+
+            // Разрешаем добавление еще записей
+            $objResponse->addAssign("mainButton", "disabled", false);
+            $objResponse->addAssign("mainButton", "value", "Добавить");
+            return $objResponse;
+        }
+
+        /**
+         * Выводим страницу записей из гостевой книги
+         *
+         * @param integer $pagenum номер страницы
+         * @return string XML данные для xajax
+         */
+        public static function showPage($pagenum) {
+            // Получаем данные
+            $html = self::getPageText($pagenum);
+
+            // Отправляем текст в браузер
+            $objResponse = new xajaxResponse("windows-1251");
+            $objResponse->addAssign("data", "innerHTML", $html);
+
+            return $objResponse;
+        }
+
+        /**
+         * Возвращает текст страницы, сгенерированный с использованием Smarty
+         *
+         * @param integer $pagenum номер страницы
+         * @return string текст страницы
+         *
+         */
+        public static function getPageText($pagenum) {
+            $onpage = 5;    // по 5 записей
+            $record = RecordFactory::get("data.txt");
+            $data_arr = $record->get($pagenum*$onpage, $onpage);
+
+            // Готовим вывод через Smarty
+            $smarty = SmartyFactory::get("templates", "templates_c");
+            $smarty->assign("data_arr", $data_arr);
+            $html = $smarty->fetch("data.tpl.html");
+               
+            // Готовим разбиение записей на страницы (по 5 записей на странице)
+            $max = $record->get_cnt();
+            $page_nums_array=array();
+            $z=0;
+            if ($max>$onpage) {
+                for ($i=0; $i<$max; $i+=$onpage) {
+                    $page_nums_array[$i]=$z++;
+                }
+            }
+            $smarty->assign("page_nums_array", $page_nums_array);
+            $smarty->assign("page_nums_cnt", count($page_nums_array));
+            $smarty->assign("current_page",  $pagenum);
+            $html .= $smarty->fetch("pages.tpl.html");
+            return $html;
+        }
+}
+?>
+
+Рассмотрим метод addRecord(). Он получает ассоциативный массив из формы добавления записи, обрабатывает его и заносит в файл-хранилище. Обработка записи заключается в удалении html тегов из полей и замены кавычек на соответствующие сущности HTML. Так же в тексте сообщения переводы строки заменяются на <br/>.  Строки:
+
+$record = RecordFactory::get("data.txt");
+$record->add($data["time"], $data["name"], $data["email"], $data["text"]);
+
+заносят обработанные данные в файл. Здесь применяется класс RecordFactory для создания экземпляра класса Record, который управляет записями. Конечно можно было бы создать экземпляр класса Record один раз в index.php и объявлять в каждой функции как глобальный, но это противоречит концепции ООП и хорошему стилю программирования. Так же класс RecordFactory реализует GOF-патерн Singleton ("Одиночка"). Его применение позволяет иметь в системе всего один экземпляр класса Record и с его помощью управлять записями. Код класса RecordFactory находится в файле RecordFactory.class.php (см архив с исходными текстами примера).
+
+Служебный метод getPageText($pagenum) осуществляет вывод очередной страницы данных через xajax. В нем осуществляется чтение массива записей из файла, генерация HTML-кода страницы с использованием Smarty-шаблона и отправка данных на страницу.
+
+Экземпляр класса Smarty создается с помощью того же паттерна Singleton, аналогично созданию экземпляра класса Record. Дальнейшая работа с шаблонизатором производится точно так же, как и в случае обычных приложений. Единственное различне в том, что сгенерированный код мы не сразу выводим на экран, а сохраняем в переменную $html
+$html = $smarty->fetch("data.tpl.html");
+
+Отправка текста в браузер через xajax производится следующим образом:
+
+$objResponse = new xajaxResponse("windows-1251");
+$objResponse->addAssign("data", "innerHTML", $html);
+
+return $objResponse;
+Работа данного кода была подробно рассмотрена в первой части статьи.
+
+Регистрируются интерфейсные функции, находящиеся в классе UInterface, следующим образом:
+
+$xajax = new xajax("Windows-1251");
+$xajax->registerFunction(array("addRecord", "UInterface", "addRecord"));
+$xajax->registerFunction(array("showPage", "UInterface", "showPage"));
+$xajax->processRequests();
+Управление отображением и добавлением записей
+
+Рассмотрим код Smarty-шаблона main.tpl.html
+
+<html>
+  <head>
+    <title>{$title}</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=windows-1251"/>
+    <link href="style.css" rel="stylesheet" type="text/css"/>
+    {$xjavascript}
+    <script language="JavaScript">
+    {literal}
+        function sendfrm(f) {
+            var z;
+            var eles=new Array("name", "email", "text");
+            var msgs=new Array("Введите Ваше имя", "Введите Ваш email", "Введите текст сообщения");
+            for(i=0; i<eles.length; i++) {
+                if(f.elements[eles[i]].value=='') {
+                    alert(msgs[i]);
+                    f.elements[eles[i]].focus();
+                    return false;
+                }
+            }
+
+            // Запрещаем добавление записей на время добавления
+            xajax.$('mainButton').disabled=true;
+            xajax.$('mainButton').value="Подождите...";
+
+            // Добавляем запись
+            xajax_addRecord(xajax.getFormValues("mainForm"));
+
+            // Очищаем форму
+            f.reset();
+            return false;
+        }
+    {/literal}
+    </script>
+  </head>
+  <body>
+    <h1 align="center">Гостевая книга xajax</h1>
+    <div align="center">
+        <div id="data"></div>
+    </div>
+    <div id="form">
+        <h2>Выскажите свое мнение:</h2>
+        <form id="mainForm" action="javascript:void(null);" onsubmit="sendfrm(this);">           
+            <table style="width: 40%" align="center">
+            <tr>
+               <td><b>Имя <sup>*</sup>:</b></td><td><input type="text" name="name" size="42" /></td>
+            </tr>
+            <tr>
+               <td><b>E-mail <sup>*</sup>:</b></td><td><input type="text" name="email" size="42" /></td>
+            </tr>
+            <tr valign="top">
+               <td><b>Сообщение <sup>*</sup>:</b></td><td><textarea name="text" cols="41" rows="10"></textarea></td>
+            </tr>
+            <tr>
+               <td colspan="2" align="center"><input id="mainButton" type="submit" value="Добавить" /></td>
+            </tr>
+            </table>
+        </form>
+    </div>
+
+    <!-- Первая порция записей -->
+    <script type="text/javascript">
+        xajax_showPage(0);
+    </script>
+  </body>
+</html>
+
+Наибольший интерес здесь представляет JavaScript функция, вызываемая при нажатии пользователем кнопки "Добавить"
+
+function sendfrm(f) {
+            var z;
+            var eles=new Array("name", "email", "text");
+            var msgs=new Array("Введите Ваше имя", "Введите Ваш email", "Введите текст сообщения");
+            for(i=0; i<eles.length; i++) {
+                if(f.elements[eles[i]].value=='') {
+                    alert(msgs[i]);
+                    f.elements[eles[i]].focus();
+                    return false;
+                }
+            }
+
+            // Запрещаем добавление записей на время добавления
+            xajax.$('mainButton').disabled=true;
+            xajax.$('mainButton').value="Подождите...";
+
+            // Добавляем запись
+            xajax_addRecord(xajax.getFormValues("mainForm"));
+
+            // Очищаем форму
+            f.reset();
+            return false;
+}
+
+Сначала проверяется факт заполнения пользователем всех полей формы. Если какое-либо поле было не заполнено, выводится соответствующее сообщение и дальнейшая обработка формы прекращается. В случае же корректного заполнения формы сначала запрещается нажатие на кнопку "добавить" и меняется ее текст, затем вызывается метод addRecord() класса UInterface. После этого очищается форма с помощью метода reset.
+
+В качестве параметра методу addRecord передается массив данных заполненной формы, получаемый функцией xajax.getFormValues("mainForm"). Вообще библиотека xajax попимо широких серверных возможностей имеет еще и замечательную клиентскую JavaScript - библиотеку, которая очень удобна и проста в использовании.
+
+Но это уже другая история...

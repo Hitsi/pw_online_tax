@@ -1,0 +1,16 @@
+/* the humans responsible & colophon */
+/* humanstxt.org */
+
+
+/* TEAM */
+  Savenkov Alexey
+  Site: 
+  Location: 
+
+/* THANKS */
+  Names (& URL): Njaaa.ru
+
+/* SITE */
+  Standards: HTML5, CSS3
+  Components: Modernizr, jQuery, xajax
+  Software:

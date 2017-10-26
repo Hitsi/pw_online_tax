@@ -1,0 +1,166 @@
+http://www.amway-shop.ru/articles/article272.html
+Использование xajax и Smarty в PHP5 - Часть 1
+
+Посвящается Гурьяновой В.С... Потому что это было... Ищете организацию праздников? Глобал-Шоу - организация праздников шоу по доступным ценам!
+
+Внимание! Во всех примерах используется переработанный исходный текст библиотек. Он адаптирован исключительно для PHP 5, а так же имеет некоторые изменения в конструкторах классов, для повышения удобства использования. Скачать измененные тексты можно вместе с примерами к статье.
+
+Одним из самых раскрученных брендов нашего времени является Web 2.0. Сейчас наверное каждая домохозяйка слышала это понятие где-то между стиркой белья и просмотром очередного аргентинско-мексиканско-бразильского сериала. Не будем здесь рассуждать на тему того, чем же именно является концепция Web 2.0. Очевидным в данном вопросе является лишь то, что центром системы (с технической точки зрения) является Ajax - Asynchronous JavaScript and XML - поэтому уметь работать с данной технологией должен каждый уважающий себя веб-программист. 
+
+Ajax - технология, позволяющая менять содержимое различных участков веб-страницы без ее перезагрузки целиком. Самыми известными приложениями построенными на базе данной технологии безусловно являются GMail (от google.com) и Windows Live (от небезызвестной (с) корпорации). Инкапсулировать Ajax в веб-приложения можно по разному. Можно например написать весь JavaScript код вручную, но при таком подходе мы столкнемся со множеством трудностей. Самым сложным пожалуй будет -  заставить работать получившийся код во всех популярных браузерах.
+
+А можно и не изобретать велосипед, а взять за основу готовый Ajax фреймворк. Самыми популярными среди PHP-разработчиков фреймворками являются sAjax и xajax. В данной статье мы поговорим о последнем.
+Введение в xajax
+
+xajax - Ajax-фреймворк, разработанный Джеретом Вайтом (Jared White) и Дж. Макс Вилсоном (J. Max Wilson) в 2005-м году. Последней версией на момент написания статьи была 0.2.4. Библиотека представляет собой набор классов для создания серверной (отвечает за регистрацию асинхронно вызываемых функций и управление вызовами, класс xajax) и клиентской (используется для обработки данных в асинхронно вызываемых функциях, класс xajaxResponse). Давайте разберемся, как пользоваться этой замечательной библиотекой.
+
+Создадим простое приложение, которое представляет собой html форму с двумя кнопками и селект-полем. При нажатии на одну кнопку нам выводится строка "hello world" строчными буквами, при нажатии на третью - прописными. Поле выбора позволяет менять цвет выводимых символов.
+PHP-скрипт использующий xajax
+
+<?php
+require_once("xajax/xajax.class.php");
+require_once("Smarty/Smarty.class.php");
+
+/**
+ * Функция выводит текст через xajax
+ *
+ * @param boolean $isCaps флаг того, что выводить надо заклавными буквами
+ * @return string XML данные для xajax
+ */
+function setText($isCaps) {
+    if ($isCaps)
+        $text = "HELLO WORLD!";
+    else
+        $text = "Hello World!";
+       
+    $objResponse = new xajaxResponse("windows-1251");
+    $objResponse->addAssign("text", "innerHTML", $text);
+   
+    return $objResponse;
+
+}
+
+/**
+ * Функция изменения цвета текста
+ *
+ * @param string $sColor - требуемый цвет
+ * @return string XML данные для xajax
+ */
+function setColor($sColor) {
+    $objResponse = new xajaxResponse("windows-1251");
+    $objResponse->addAssign("text", "style.color", $sColor);
+   
+    return $objResponse;
+}
+
+
+// Создаем класс - шаблонизатор
+$smarty = new Smarty();
+
+// Готовим работу с xAjax
+$xajax = new xajax("Windows-1251");
+$xajax->registerFunction("setText");
+$xajax->registerFunction("setColor");
+$xajax->processRequests();
+
+
+// Готовим работу со Smarty
+$smarty->assign("xjavascript", $xajax->getJavascript("."));
+$smarty->assign("name", "Использование xajax и Smarty");
+$smarty->display("main.tpl.html");
+?>
+
+Текст скрипта очень простой. Сначала мы подключаем файлы шаблонного движка Smarty и библиотеки xajax. Затем создаем экземпляр класса smarty, через который будет происходить генерация html.
+
+Далее начинается этап работы с xajax.
+
+$xajax = new xajax("Windows-1251");
+$xajax->registerFunction("setText");
+$xajax->registerFunction("setColor");
+$xajax->processRequests();
+
+Сначала создается экземпляр класса xajax, в качестве параметра конструктору передается кодировка, используемая веб-приложением. В нашем случае это Windows-1251. Далее происходит регистрация функций, вызов которых будет осуществляться асинхронно. Регистрировать можно как обычные функции, так и статические методы класса. Регистрация статического метода класса осуществляется следующим образом:
+
+$xajax->registerFunction(array("Имя функции которую будет "видеть" Ajax", имя класса, имя метода));
+
+Строчка $xajax->processRequests() запускает цикл Ajax обработки.
+
+Этап работы со Smarty ничем не отличается от классического для всех приложений, использующих этот шаблонный движок:
+
+$smarty->assign("xjavascript", $xajax->getJavascript("."));
+$smarty->assign("name", "Использование xajax и Smarty");
+$smarty->display("main.tpl.html");
+
+$xajax->getJavascript(".") возвращает JavaScript код, который необходимо внедрить в вашу страницу. Параметром функции является путь к директории, где находится каталог xajax_js. В данном случае он находится в текущей директории.
+Особенности асинхронно-вызываемых функций
+
+Основной особенностью асинхронно-вызываемых функций при использовании xajax является такой код:
+
+    $objResponse = new xajaxResponse("windows-1251");
+    $objResponse->addAssign("text", "innerHTML", $text);
+   
+    return $objResponse;
+
+Сначала создается экземпляр класса xajaxResponse - часть xajax, предназначенная для создания асинхронно-вызываемых функций. Класс xajaxResponse имеет следующие наиболее используемые методы:
+
+addAssign($sTarget, $sAttribute, $sData) - заменяет значение $sAttribute элемента $sTarget на $sData.
+
+addAppend($sTarget, $sAttribute, $sData) - добавляет $sData в конец значения атрибута $sAttribute элемента $sTarget.
+
+addPrepend($sTarget, $sAttribute, $sData) - добавляет $sData в начало значения атрибута $sAttribute элемента $sTarget.
+
+addReplace($sTarget, $sAttribute, $sSearch, $sData) - заменяет найденное по маске $sSearch значение атрибута $sAttribute элемента $sTarget на $sData.
+
+addClear($sTarget, $sAttribute) - очищает значение атрибута $sAttribute элемента $sTarget.
+
+addAlert($sMsg) - выводит окно с текстовым сообщением $sMsg. Очень удобно при отладке.
+
+addRemove($sTarget) - уничтожает элемент $sTarget
+
+addCreate($sParent, $sTag, $sId, $sType = "") - создает элемент $sTag с id - $sId, как потомка от $sParent и типом $sType. Тип удобно использовать для создания элементов форм.
+
+addInsert($sBefore, $sTag, $sId) - вставляет элемент $sTag с id - $sId до элемента $sBefore.
+
+addInsertAfter($sAfter, $sTag, $sId) - вставляет элемент $sTag с id - $sId после элемента $sAfter.
+
+addCreateInput($sParent, $sType, $sName, $sId) - создает элемент HTML формы как дочерний элемент от элемента $sParent, с типом $sType, именем $sName и id - $sId. Так же есть еще методы addInsertInput и addInsertInputAfter - вставляют созданный элемент соответственно до или после заданного.
+
+addEvent($sTarget, $sEvent, $sScript) - создает событие $sEvent, привязывая его к элементу $sTarget и связывая с ним код $sScript.
+Например: $objResponse->addEvent("contentDiv", "onclick", "alert('Hello World');");
+Smarty-шаблон для работы с xajax
+
+Теперь рассмотрим исходный текст файла шаблона:
+
+<html>
+  <head>
+    <title>{$title}</title>
+    {$xjavascript}
+  </head>
+  <body>
+    <div id="text">&#160;</div>
+    <br/>   
+    <button onclick="xajax_setText(0)" >нажми меня</button>
+    <button onclick="xajax_setText(1)" >НАЖМИ МЕНЯ</button>
+    <select id="colorselect" onchange="xajax_setColor(document.getElementById('colorselect').value);">
+        <option value="black" selected="selected">Черный</option>
+        <option value="red">Красный</option>
+        <option value="green">Зеленый</option>
+        <option value="blue">Голубой</option>
+    </select>
+    <!-- Значения по умолчанию -->
+    <script type="text/javascript">
+        xajax_setText(0);
+        xajax_setColor(document.getElementById('colorselect').value);
+    </script>
+
+  </body>
+</html>
+
+{$xjavasctript} подключает текст JavaScript'ов в начало HTML кода страницы. При нажатии на кнопку вызывается функция xajax_setText(), код которой то и находится на сервере (PHP-функция setText()). Все асинхронно вызываемые серверные функции должны иметь префикс xajax_. Конструкция xajax_setColor(document.getElementById('colorselect').value); вызывает функцию setColor, передавая ей в качестве значения выбранный пользователем цвет.
+
+Основным плюсом библиотеки является то, что большая часть JavaScript кода генерируется динамически. Пользователю библиотеки достаточно знать JavaScript на базовом уровне (как вставить в HTML обработчик события, как получить значение того или иного элемента и собственно все). Основной код пишется на родном для разработчика языке - PHP.
+
+    *
+      исходные тексты примеров
+    *
+      Использование xajax и Smarty в PHP5. Часть 2
